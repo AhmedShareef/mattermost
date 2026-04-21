@@ -172,6 +172,16 @@ describe('components/signup/Signup', () => {
         expect(container).toMatchSnapshot();
     });
 
+    it('should show custom OpenID signup when OpenID is enabled without a license', () => {
+        mockLicense = {IsLicensed: 'false', Cloud: 'false'};
+
+        renderWithContext(
+            <Signup/>,
+        );
+
+        expect(screen.getByRole('link', {name: /Open ID/i})).toBeInTheDocument();
+    });
+
     it('should match snapshot for all signup options enabled with EnableUserCreaton disabled', () => {
         mockConfig.EnableUserCreation = 'false';
 

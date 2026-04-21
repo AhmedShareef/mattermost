@@ -76,6 +76,23 @@ func TestGetClientConfig(t *testing.T) {
 			nil,
 		},
 		{
+			"unlicensed OpenID settings",
+			&model.Config{
+				OpenIdSettings: model.SSOSettings{
+					Enable:      model.NewPointer(true),
+					ButtonText:  model.NewPointer("Login with Penieltech"),
+					ButtonColor: model.NewPointer("#1d22d8"),
+				},
+			},
+			"",
+			nil,
+			map[string]string{
+				"EnableSignUpWithOpenId": "true",
+				"OpenIdButtonText":       "Login with Penieltech",
+				"OpenIdButtonColor":      "#1d22d8",
+			},
+		},
+		{
 			"licensed for theme management",
 			&model.Config{
 				EmailSettings: model.EmailSettings{
