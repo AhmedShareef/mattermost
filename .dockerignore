@@ -1,0 +1,16 @@
+*
+!.dockerignore
+!README.md
+!NOTICE.txt
+!server/
+!server/**
+!webapp/
+!webapp/**
+
+server/bin/
+server/dist/
+server/logs/
+server/tmp/
+webapp/.parcel-cache/
+webapp/node_modules/
+prod-details/

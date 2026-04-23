@@ -4,6 +4,8 @@ This folder contains some files that we use to build the `mattermost-server` and
 
 The `Dockerfile` in this folder (`Dockerfile.buildenv`) is the build environment for our current builds you can find the docker image to download [here](https://hub.docker.com/r/mattermost/mattermost-build-server/tags/) or build your own.
 
+For a source-built runtime image intended for single-host production deployments, see [`Dockerfile.production`](./Dockerfile.production) and [`README.production.md`](./README.production.md).
+
 
 
 ### Docker Image for building the Server
