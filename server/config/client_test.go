@@ -91,6 +91,7 @@ func TestGetClientConfig(t *testing.T) {
 				"OpenIdButtonText":       "Login with Penieltech",
 				"OpenIdButtonColor":      "#1d22d8",
 			},
+			nil,
 		},
 		{
 			"licensed for theme management",
