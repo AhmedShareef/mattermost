@@ -4,10 +4,23 @@ ARG NODE_IMAGE=node:24-bookworm
 ARG GO_IMAGE=golang:1.25-bookworm
 ARG RUNTIME_IMAGE=debian:bookworm-slim
 
+FROM ${GO_IMAGE} AS certificates
+
 FROM ${NODE_IMAGE} AS webapp-builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apt-get update \
+ARG WEBAPP_NODE_OPTIONS=--max-old-space-size=4096
+ARG WEBAPP_WEBPACK_PARALLELISM=2
+
+ENV NODE_OPTIONS=${WEBAPP_NODE_OPTIONS} \
+    NPM_CONFIG_FETCH_RETRIES=5 \
+    NPM_CONFIG_FETCH_RETRY_FACTOR=2 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=10000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000 \
+    NPM_CONFIG_FETCH_TIMEOUT=300000
+
+RUN sed -ri 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
     ca-certificates \
     gcc \
@@ -24,9 +37,9 @@ WORKDIR /src/webapp
 COPY webapp /src/webapp
 
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci
+    npm ci --prefer-offline --no-audit --no-fund
 
-RUN npm run build --workspace channels
+RUN npm run build --workspace channels -- --parallelism="${WEBAPP_WEBPACK_PARALLELISM}"
 
 FROM ${GO_IMAGE} AS server-builder
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -36,7 +49,8 @@ ARG MM_BUILD_HASH=
 
 ENV GOFLAGS=-buildvcs=false
 
-RUN apt-get update \
+RUN sed -ri 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
     ca-certificates \
     git \
@@ -58,7 +72,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     if [[ -z "${build_hash}" ]]; then \
       build_hash="custom"; \
     fi; \
-    build_date="$(date -u)"; \
+    build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"; \
     mmctl_build_date="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"; \
     if git rev-parse HEAD >/dev/null 2>&1; then \
       mmctl_git_commit="$(git rev-parse HEAD)"; \
@@ -90,17 +104,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     mmctl_ldflags+=" -X github.com/mattermost/mattermost/server/v8/cmd/mmctl/commands.commitDate=${mmctl_commit_date}"; \
     env GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "${mmctl_ldflags}" -o bin/mmctl ./cmd/mmctl; \
     make BUILD_NUMBER="${build_number}" BUILD_ENTERPRISE=false package-prep; \
-    make \
-      BUILD_NUMBER="${build_number}" \
-      BUILD_ENTERPRISE=false \
-      DIST_PATH_GENERIC=dist/linux_amd64/mattermost \
-      CURRENT_PACKAGE_ARCH=linux_amd64 \
-      MM_BIN_NAME=mattermost \
-      MMCTL_BIN_NAME=mmctl \
-      package-general; \
-    test -x dist/linux_amd64/mattermost/bin/mattermost; \
-    test -x dist/linux_amd64/mattermost/bin/mmctl; \
-    test -f dist/linux_amd64/mattermost/client/root.html
+    mkdir -p dist/mattermost/bin dist/mattermost/logs; \
+    install -m 0755 bin/mattermost bin/mmctl dist/mattermost/bin/; \
+    test -x dist/mattermost/bin/mattermost; \
+    test -x dist/mattermost/bin/mmctl; \
+    test -f dist/mattermost/client/root.html
 
 FROM ${RUNTIME_IMAGE} AS runtime
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -113,7 +121,10 @@ ENV HOME=/mattermost
 ENV MM_INSTALL_TYPE=docker
 ENV MM_SERVICESETTINGS_ENABLELOCALMODE=true
 
-RUN apt-get update \
+COPY --from=certificates /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+RUN sed -ri 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
     ca-certificates \
     mailcap \
@@ -138,12 +149,12 @@ RUN groupadd --gid "${PGID}" mattermost \
   && chmod 700 /mattermost/.postgresql \
   && chown -R mattermost:mattermost /mattermost
 
-COPY --from=server-builder --chown=2000:2000 /src/server/dist/linux_amd64/mattermost /mattermost
+COPY --from=server-builder --chown=${PUID}:${PGID} /src/server/dist/mattermost /mattermost
 
 USER mattermost
 WORKDIR /mattermost
 
-HEALTHCHECK --interval=30s --timeout=10s \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s \
   CMD ["/mattermost/bin/mmctl", "system", "status", "--local"]
 
 EXPOSE 8065 8067 8074 8075
